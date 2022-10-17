@@ -1,5 +1,6 @@
-import tweepy
 import configparser
+import threading
+import tweepy
 import redis
 import time
 
@@ -21,17 +22,32 @@ class BC:
     UNDERLINE = '\033[4m'
     RESET = '\033[0m'
 
+def process_tweet(tweet):
+    tweet = api.get_status(tweet.id)
+
+    if hasattr(tweet, 'retweeted_status'):  # Check if Retweet
+        print(f'{BC.FAIL}[RT]{BC.OKBLUE} {tweet.user.screen_name}{BC.RESET}: {BC.WARNING}{tweet.text}')
+    elif tweet.in_reply_to_status_id is None:  # Check if Reply
+        print(f'{BC.FAIL}[NR]{BC.OKBLUE} {tweet.user.screen_name}{BC.RESET}: {BC.WARNING}{tweet.text}')
+    # Check if the user of current tweet is same as the user of tweet of reply
+    elif tweet.in_reply_to_screen_name == tweet.user.screen_name:
+        print(f'{BC.OKGREEN}[OK]{BC.OKBLUE} {tweet.user.screen_name}{BC.RESET}: {tweet.text}')
+        #check if the bot already retweeted the in reply to tweet
+        try:
+            api.retweet(tweet.in_reply_to_status_id)
+        except:
+            print(f'{BC.FAIL}Already retweeted{BC.RESET}')
+    else:
+        print(f'{BC.FAIL}[WU]{BC.OKBLUE} {tweet.user.screen_name}{BC.RESET}: {BC.WARNING}{tweet.text}')
+
 class MyStream(tweepy.StreamingClient):
     def on_connect(self):
         print(f'Stream connection {BC.BOLD}{BC.OKGREEN}OK{BC.RESET}')
         print(f'Time took on setup: {BC.BOLD}{BC.OKGREEN}{round((time.time() - start) * 1000):,}ms{BC.RESET}')
 
     def on_tweet(self, tweet):
-        #fetch the tweet
-        tweet = api.get_status(tweet.id)
-        print(f'{BC.OKBLUE}{tweet.user.screen_name}{BC.RESET}: {tweet.text}')
-        #like the tweet
-        tweet.favorite()
+        # execute the process_tweet function in a thread, so it doesn't block the stream
+        threading.Thread(target=process_tweet, args=(tweet,)).start()
 
     def on_disconnect(self):
         print(f'Stream connection {BC.BOLD}{BC.FAIL}DISCONNECTED{BC.RESET}')
@@ -63,6 +79,14 @@ try:
 except:
     print(f'{BC.FAIL}Error during authentication.\nCheck your CREDENTIALS in {BC.UNDERLINE}config.ini{BC.RESET}{BC.FAIL}.{BC.RESET}')
 
+# get the limit of the api
+print(f'{BC.HEADER}Getting the limit of the API...{BC.RESET}')
+limit = api.rate_limit_status()
+for i in limit['resources']:
+    for j in limit['resources'][i]:
+        #if remaining and limit is same
+        if limit['resources'][i][j]['remaining'] != limit['resources'][i][j]['limit']:
+            print(f'{j}: {BC.OKGREEN}{limit["resources"][i][j]["remaining"]}{BC.RESET}/{BC.OKCYAN}{limit["resources"][i][j]["limit"]}{BC.RESET}')
 
 #Start the stream
 stream = MyStream(bearer_token=config['CREDENTIALS']['bearer_token'])
