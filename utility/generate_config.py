@@ -10,11 +10,9 @@ config['CREDENTIALS'] = {
     'bearer_token': 'BEARER_TOKEN'
 }
 
-config['REDIS'] = {
-    'host': 'localhost',
-    'port': '6379',
-    'password': 'YOUR_PASSWORD_HERE',
-    'db': '0'
+config['STREAM'] = {
+    'keyword': 'Python, programming, coding',
+    'language': 'en',
 }
 
 with open('../config.ini', 'w') as configfile:

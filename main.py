@@ -1,7 +1,6 @@
 import configparser
 import threading
 import tweepy
-import redis
 import time
 
 start = time.time()
@@ -23,27 +22,37 @@ class BC:
     RESET = '\033[0m'
 
 def process_tweet(tweet):
-    tweet = api.get_status(tweet.id)
-
-    if hasattr(tweet, 'retweeted_status'):  # Check if Retweet
-        print(f'{BC.FAIL}[RT]{BC.OKBLUE} {tweet.user.screen_name}{BC.RESET}: {BC.WARNING}{tweet.text}')
-    elif tweet.in_reply_to_status_id is None:  # Check if Reply
-        print(f'{BC.FAIL}[NR]{BC.OKBLUE} {tweet.user.screen_name}{BC.RESET}: {BC.WARNING}{tweet.text}')
-    # Check if the user of current tweet is same as the user of tweet of reply
-    elif tweet.in_reply_to_screen_name == tweet.user.screen_name:
-        print(f'{BC.OKGREEN}[OK]{BC.OKBLUE} {tweet.user.screen_name}{BC.RESET}: {tweet.text}')
-        #check if the bot already retweeted the in reply to tweet
-        try:
-            api.retweet(tweet.in_reply_to_status_id)
-        except:
-            print(f'{BC.FAIL}Already retweeted{BC.RESET}')
+    # check if the tweet is a retweet
+    newline = '\n'
+    if tweet.text.startswith('RT @'):
+        # print(f'{BC.FAIL}[RT]{BC.OKBLUE}{BC.WARNING} {(tweet.text.replace("RT @", "")).replace(newline, "")}{BC.RESET}')
+        pass
     else:
-        print(f'{BC.FAIL}[WU]{BC.OKBLUE} {tweet.user.screen_name}{BC.RESET}: {BC.WARNING}{tweet.text}')
+        if tweet.text.startswith('@'):
+            print(f'{BC.FAIL}[RE]{BC.OKBLUE}{BC.WARNING} {tweet.text.replace(newline, "")}')
+        else:
+            # check if tweet includes more than 3 newlines
+            if tweet.text.count(newline) > 4:
+                print(f'{BC.OKCYAN}[SP]{BC.OKBLUE}{BC.FAIL} {tweet.text.replace(newline, "")}')
+            else:
+                #fetch the tweet
+                tweet = api.get_status(tweet.id)
+                # check if user has more than 30 followers
+                if tweet.user.followers_count > 30:
+                    print(f'{BC.OKGREEN}[OK]{BC.RESET} {tweet.text.replace(newline, "")}')
+                    #like and retweet the tweet
+                    tweet.favorite()
+                    tweet.retweet()
+                else:
+                    print(f'{BC.OKCYAN}[FL]{BC.OKBLUE}{BC.FAIL} {tweet.text.replace(newline, "")}')
+
+    return None
 
 class MyStream(tweepy.StreamingClient):
     def on_connect(self):
         print(f'Stream connection {BC.BOLD}{BC.OKGREEN}OK{BC.RESET}')
         print(f'Time took on setup: {BC.BOLD}{BC.OKGREEN}{round((time.time() - start) * 1000):,}ms{BC.RESET}')
+        print('=============== Stream started ===============')
 
     def on_tweet(self, tweet):
         # execute the process_tweet function in a thread, so it doesn't block the stream
@@ -55,17 +64,6 @@ class MyStream(tweepy.StreamingClient):
 
     def on_on_limit(self, notice):
         print(f'{BC.BOLD}{BC.WARNING}Limit notice: {notice}{BC.RESET}')
-
-# Connect to Redis
-print(f'{BC.HEADER}Trying to connect to Redis...{BC.RESET}')
-r = redis.Redis(host=config['REDIS']['host'], port=int(config['REDIS']['port']), db=int(config['REDIS']['db']), password=config['REDIS']['password'])
-try:
-    r.ping()
-    print(f'Redis connection {BC.OKGREEN}{BC.BOLD}OK{BC.RESET}')
-    
-except:
-    print(f'{BC.FAIL}Error during connection.\nCheck your REDIS in {BC.UNDERLINE}config.ini{BC.RESET}{BC.FAIL}.{BC.RESET}')
-    exit()
 
 # Authenticate check to twitter
 print(f'{BC.HEADER}Trying to connect to Twitter API...{BC.RESET}')
@@ -88,27 +86,38 @@ for i in limit['resources']:
         if limit['resources'][i][j]['remaining'] != limit['resources'][i][j]['limit']:
             print(f'{j}: {BC.OKGREEN}{limit["resources"][i][j]["remaining"]}{BC.RESET}/{BC.OKCYAN}{limit["resources"][i][j]["limit"]}{BC.RESET}')
 
-#Start the stream
+# Set rule for the stream
+local_rules = config['STREAM']['keyword'].split(', ')
+
 stream = MyStream(bearer_token=config['CREDENTIALS']['bearer_token'])
 print(f'{BC.HEADER}Trying to set rules for streaming...{BC.RESET}')
 rules = stream.get_rules()
 
-if len(rules.data) == 0:
-    print(f'{BC.WARNING}No rules found, adding a rule...{BC.RESET}')
-    stream.add_rules(tweepy.StreamRule(f'@{user.screen_name}'))
-    print(f'Rule added.')
-elif len(rules.data) == 1 and rules.data[0].value == f'@{user.screen_name}':
+server_rules = []
+for i in range(len(rules.data)):
+    server_rules.append(rules.data[i].value)
+
+print(f'Rules on server:{BC.OKCYAN} {f"{BC.RESET}, {BC.OKCYAN}".join(i for i in server_rules)}{BC.RESET}')
+print(f'Rules set on local:{BC.OKCYAN} {f"{BC.RESET}, {BC.OKCYAN}".join(i for i in local_rules)}{BC.RESET}')
+
+#check if the rules are the same
+if local_rules == server_rules:
     print(f'Rule already exists, skipping...')
 else:
-    print(f'{BC.WARNING}More than one rule found, restoring rules.{BC.RESET}')
-    for rule in rules.data:
-        stream.delete_rules(rule.id)
-    stream.add_rules(tweepy.StreamRule(f'@{user.screen_name}'))
-    print(f'Rule has been restored.')
+    if len(rules.data) != 0:
+        print(f'{BC.WARNING}Rules are different, deleting old rules and adding new rules...{BC.RESET}')
+        for rule in rules.data:
+            stream.delete_rules(rule.id)
+    else:
+        print(f'{BC.WARNING}No rules found, adding new rules...{BC.RESET}')
+
+    for i in range(len(local_rules)):
+        stream.add_rules(tweepy.StreamRule(local_rules[i]))
+    print('Rules restored')
 
 print(f'Setting rule for streaming {BC.OKGREEN}{BC.BOLD}OK{BC.RESET}')
-
 print(f'{BC.HEADER}Trying to start streaming...{BC.RESET}')
+
 # Start the stream
 stream.filter(tweet_fields=["referenced_tweets"])
 
