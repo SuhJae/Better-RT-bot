@@ -93,9 +93,6 @@ stream = MyStream(bearer_token=config['CREDENTIALS']['bearer_token'])
 print(f'{BC.HEADER}Trying to set rules for streaming...{BC.RESET}')
 rules = stream.get_rules()
 
-# Setting the rules, so it only listens to tweets with the user mention
-stream.add_rules(tweepy.StreamRule(f'@{user.screen_name}'))
-
 if len(rules.data) == 0:
     print(f'{BC.WARNING}No rules found, adding a rule...{BC.RESET}')
     stream.add_rules(tweepy.StreamRule(f'@{user.screen_name}'))
