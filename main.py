@@ -39,10 +39,22 @@ def process_tweet(tweet):
                 tweet = api.get_status(tweet.id)
                 # check if user has more than 30 followers
                 if tweet.user.followers_count > 30:
-                    print(f'{BC.OKGREEN}[OK]{BC.RESET} {tweet.text.replace(newline, "")}')
-                    #like and retweet the tweet
-                    tweet.favorite()
-                    tweet.retweet()
+                    # check if it is a retweet
+                    if tweet.retweeted == False:
+                        # check if it is a reply
+                        if tweet.in_reply_to_status_id == None:
+                            #check if it is a quote
+                            if tweet.is_quote_status == False:
+                                print(f'{BC.OKGREEN}[OK]{BC.RESET} {tweet.text.replace(newline, "")}')
+                                # like and retweet the tweet
+                                tweet.favorite()
+                                tweet.retweet()
+                            else:
+                                print(f'{BC.OKCYAN}[QT]{BC.OKBLUE}{BC.WARNING} {tweet.text.replace(newline, "")}')
+                        else:
+                            print(f'{BC.FAIL}[RE]{BC.OKBLUE}{BC.WARNING} {tweet.text.replace(newline, "")}')
+                    else:
+                        print(f'{BC.FAIL}[RT]{BC.OKBLUE}{BC.WARNING} {(tweet.text.replace("RT @", "")).replace(newline, "")}{BC.RESET}')
                 else:
                     print(f'{BC.OKCYAN}[FL]{BC.OKBLUE}{BC.FAIL} {tweet.text.replace(newline, "")}')
 
